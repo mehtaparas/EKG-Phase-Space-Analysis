@@ -1,0 +1,201 @@
+% load signal
+
+% define window size (5s)
+
+x = 5000;
+
+% define number of windows
+
+a = floor(length(signal)/x);
+
+% compute autocorrelation of non overlapping windows with varying time lags (1 to 100)
+
+for i = 1:a
+	for j = 1:100
+		r = corrcoef(signal((i-1)*x + 1 : i*x - 1 - j), signal((i-1)*x + 1 + j : i*x - 1));
+		c(j, i) = r(1,2);
+	end;
+end;
+
+% compute autocorrelation with overlapping windows with varying time lags (1 to 100)
+
+% define step size - ie - how many data points to slide your window
+
+s = 50
+
+% number of windows
+
+nwind = floor((length(signal) - x - 1)/s);
+
+for i = 1:nwind
+	for j = 1:100
+		r = corrcoef(signal(1 + (i-1)*s : x - 1 - j + (i-1)*s), signal(1 + j + (i-1)*s : x - 1 + (i-1)*s));
+		c(j, i) = r(1,2);
+	end;
+end;
+
+
+% plotting autocorrelation matrix 
+% - this plots the autocorrelation across all lags (1-100) for 4 windows (1-4) 
+% - a horizontal line is added to see where it crosses zero
+
+subplot(2,2,1); plot(c(:,1)); hline = refline(0,0); hline.Color = 'r';
+subplot(2,2,2); plot(c(:,2)); hline = refline(0,0); hline.Color = 'r';
+subplot(2,2,3); plot(c(:,3)); hline = refline(0,0); hline.Color = 'r';
+subplot(2,2,4); plot(c(:,4)); hline = refline(0,0); hline.Color = 'r';
+
+% finding taus for each window
+% for each window the index of the first negative element is recorded
+% this represents the time lag value that first crosses the zero line
+% windows that do not have negative elements (ie - don't cross the zero line) are ignored
+% - they are reperesented in the "a" vector by a zero
+
+a = zeros([1 nwind]);
+
+for i = 1:nwind
+	if min(c(:,i)) < 0
+		j = 1;
+		while c(j,i) > 0
+			j = j + 1;
+		end;
+		a(i) = j;
+	end;
+end;
+
+% remove non zero elements from "a"
+
+a_nonzero = nonzeros(a);
+
+% find average delay across all windows
+
+tau = floor(mean(a_nonzero));
+
+
+% the optimal delay time (tau) is found by finding the first zero of the autocorrelation function (c(j,i)) 
+% in the matrix c(j,i) the rows (j) represent lag values from 1 - 100, the columns (i) represent the window
+% the optimal delay for each window is the first lag value that gives you a zero autocorrelation coefficient
+
+% 9 dimemnsional reconstruction of phase space with delay = tau
+
+column1 = signal(1 : length(signal) - 8*tau);
+column2 = signal(1 + tau : length(signal) - 7*tau;
+column3 = signal(1 + 2*tau : length(signal) - 6*tau);
+column4 = signal(1 + 3*tau : length(signal) - 5*tau);
+column5 = signal(1 + 4*tau : length(signal) - 4*tau);
+column6 = signal(1 + 5*tau : length(signal) - 3*tau);
+column7 = signal(1 + 6*tau : length(signal) - 2*tau);
+column8 = signal(1 + 7*tau : length(signal) - 1*tau);
+column9 = signal(1 + 8*tau : length(signal));
+
+phase_space_matrix = [column1 column2 column3 column4 column5 column6 column7 column8 column9];
+
+% 3D representation of phase space
+
+% use Savitzky Golay Filter
+
+sg1 = sgolayfilt(signal,3,47);
+
+plot3(sg1(1:length(sg1)-2*tau) sg1(1+tau:length(sg1)-tau) sg1(1+2*tau:length(sg1))]; xlabel('delay0'); ylabel('delay1'); zlabel('delay2');
+
+% Tensor Matrix of Phase Space (3D)
+
+phase_space1 = [signal(1:length(signal)-2*tau) signal(1+tau:length(signal)-tau) signal(1+2*tau:length(signal))];
+
+t_11 = 0; t_22 = 0; t_33 = 0;
+t_12 = 0; t_13 = 0; t_23 = 0;
+
+for i = 1:length(phase_space1)
+t_11 = t_11 + (phase_space1(i,2))^2 + (phase_space1(i,3))^2;
+t_22 = t_22 + (phase_space1(i,1))^2 + (phase_space1(i,3))^2;
+t_33 = t_33 + (phase_space1(i,1))^2 + (phase_space1(i,2))^2;
+t_12 = t_12 + (phase_space1(i,1) * phase_space1(i,2));
+t_13 = t_13 + (phase_space1(i,1) * phase_space1(i,3));
+t_23 = t_23 + (phase_space1(i,2) * phase_space1(i,3));
+end;
+
+tensor_matrix1 = [t_11 -t_12 -t_13; -t_12 t_22 -t_23; -t_13 -t_23 t_33];
+
+% find eigenvalues and eigenvectors of tensor matrix
+
+[V,D] = eig(tensor_matrix1);
+
+% project along principal directions (eigenvectors corresponding to the 2 largest eigenvalues)
+
+projection = phase_space1 * [V(:,3) V(:,2)];
+
+
+% Calculate Spatial Filling Index
+
+% normalize projection
+
+projection_norm = [projection(:,1)/max(projection) projection(:,2)/max(projection)];
+
+% divide normalized projection into grids (10x10) and count points in each grid
+
+grid_counts = hist3(projection_norm);
+
+% compute probability measure for each grid
+
+prob_counts = grid_counts/length(phase_space1);
+
+% square the elements of prob_counts
+
+square_counts = prob_counts.^2;
+
+% sum the square counts
+
+sum_counts = sum(prob_counts(:));
+
+% Spatial Filling Index is found by dividing sum_counts by total number of grids
+
+sfi = sum_counts/100;
+
+
+% Calculate Moment Invariants
+
+plot(projection(:,1),projection(:,2))
+
+f = getframe(gcf);
+[x,map] = frame2im(f);
+
+xx = x(:,:,1);
+idx = xx < 240;
+
+% download "Hu's Moments" zip file to use the below functions
+
+eta = SI_Moment(idx); 
+inv_moments = Hu_Moments(eta);
+
+% Find Heart Rate/Calculate Average Trace
+
+[pk1,loc1] = findpeaks(sg1,'MinPeakDistance',500,'MinPeakHeight',0.25);
+
+for i = 2:length(loc1)-1
+diff(i) = loc1(i+1) - loc1(i);
+end;
+
+% diff records the heart rate intervals
+
+% using an average period length
+
+period_length = mean(diff(2:end));
+
+for i = 1:period_length
+for j = 1:floor(length(sg1)/period_length);
+p(j) = c1(i+(j-1)*period_length);
+q(j) = c2(i+(j-1)*period_length);
+t(j) = c3(i+(j-1)*period_length);
+end;
+n(i,1) = mean(p);
+n(i,2) = mean(q);
+n(i,3) = mean(t);
+end;
+
+% plot average trace
+
+plot3(n(:,1),n(:,2),n(:,3));
+
+
+
+
+
